@@ -12,7 +12,11 @@ Materials for the workshop were developed using `R` version 4.3.1 ("Beagle Scout
 
 The packages required for this workshop are:
 
-*TODO*
+- `ggplot2`
+- `dplyr`
+- `survival`
+- `boot`
+- `ggcorrplot`
 
 To install a package, use `install.packages("packagename")`.
 
