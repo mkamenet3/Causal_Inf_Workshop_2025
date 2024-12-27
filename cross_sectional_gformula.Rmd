@@ -1,0 +1,373 @@
+---
+title: "Longitudinal G-Formula"
+author: "A. Keil and M.Kamenetsky"
+date: "2025-02"
+output:
+  html_document:
+    code_folding: hide
+---
+
+## Research Questions:
+
+<!-- - To estimate the effects of radon on all cause mortality in a dataset of uranaium mine workers -->
+- To estimate the joint effects of air co-pollutants from a coal-fired power plant on 2 year old mental development index (MDI) score under various reduction scenarios
+
+
+## Learning Objectives:
+
+By the end of this tutorial, you will be able to:
+
+- Develop a model based on an directed acylic graph (DAG)
+- Complete a parametric g-formula analysis using `R` software
+- Estimate different joint effects under different reduction scenarios
+- Bootstrap confidence intervals for effect estimates under different reduction scenarious
+- Interpret results in a causal inference framework
+
+
+
+
+## Key Points:
+
+
+- Causal assumptions are assumed to be met. They are:
+
+  - 1) Exchangeability
+  - 2) Consistency
+  - 3) Positivity
+  
+- The parametric g-formula allows us to answer key public health questions, such as expected outcomes under various regimes
+- In order to get valid confidence intervals, we must use the bootstrap
+
+
+# Coal-Fire Power Plant Example: Cross-Sectional G-Formula 
+
+## Causal Contrasts
+
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+answerkey <- TRUE
+```
+
+First, we load in the libraries needed for this analysis. If you have not installed these libraries yet, please be sure to do so using `install.packages("packagename")`.
+
+
+```{r, class.source = 'fold-show'}
+#Load in libraries
+library(ggplot2) #for plotting
+library(dplyr) #for data cleaning
+library(survival) #for survival analysis
+library(boot) #for bootstrapping
+library(ggcorrplot)
+```
+
+
+Our data set is a (simulated) birth cohort of 3,961 individuals, followed up to 2 years of age in a U.S. city. The outcome of interest is the Mental Development Index (MDI) measured at age 2. The exposures of interest are 3 metals known to be emitted from coal-fired power plants: arsenic, beryllium, and cadmium. These eposures are measured as annual ambient levels from birth to age 1 via passive monitoring. The confounder of interest is urbanicity.
+
+Our directed acyclic graph (DAG) of the research question is:
+
+```{r, echo=FALSE}
+library(ggdag)
+our_dag <- ggdag::dagify(B ~ U,
+                         Y ~ B,
+                         Y ~ A, 
+                         Y ~ C,
+                         A ~ U,
+                         C~ U,
+                         Y ~ L,
+                         A ~ L,
+                         B ~ L,
+                         C~ L,
+                         labels = c("B" = "Beryllium",
+                                    "U" = "Coal plant",
+                                    "Y" = "MDI",
+                                    "A" = "Arsenic",
+                                    "C" = "Cadmium",
+                                    "L" = "Urbanicity"))
+
+
+#set.seed(2)
+set.seed(103)
+ggdag::ggdag(our_dag,
+             use_labels = "label") +
+  theme_void() +
+  ggtitle("DAG")
+
+```
+
+
+
+Next, we load in the data set `coalplant` and perform an initial exploratory data analysis:
+
+```{r, class.source = 'fold-show'}
+coalplant <- read.csv("2018_ISEE_causal-master/analyses/data/coalplant.csv")
+str(coalplant)
+```
+
+
+By using the `str()` command, we identify the following 4 variables:
+
+**MORE INFO ON THE DATASET**
+
+- `id`: a unique identifier for each individual 
+- `as`: arsenic levels
+- `be`: beryllium levels
+- `cd`: cadmium levels
+- `mdi`: Mental Development Index (MDI) measured at age 2
+- `urbanicity`: 0/1 indicator taking 1 if participant lived in an urban area or 0 otherwise
+
+We first look at the summary statistics for the continuous variables and a table for the binary variable, `urbanicity`.
+
+```{r, class.source = 'fold-show'}
+summary(coalplant[, 2:5])
+table(coalplant$urbanicity)
+
+```
+
+We observe similar distributions for the three exposures. The mean and median MDI scores are both around 97. Most participants live in an urban setting `r table(coalplant$urbanicity)[[2]]`.
+
+To visualize the data, we create histograms and facet by urbanicity status:
+
+```{r, class.source = 'fold-show'}
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=as)) +
+  theme_bw() +
+  ggtitle("Histogram of Arsenic") +
+  facet_grid(.~ urbanicity)
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=be)) +
+  theme_bw() +
+  ggtitle("Histogram of Beryllium") +
+  facet_grid(.~ urbanicity)
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=cd)) +
+  theme_bw() +
+  ggtitle("Histogram of Cadmium") +
+  facet_grid(.~ urbanicity)
+
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=mdi)) +
+  theme_bw() +
+  ggtitle("Histogram of MDI") +
+  facet_grid(.~ urbanicity)
+
+```
+
+
+
+
+We observe large differences in distributions for the exposures by urbanicity. Intuitively, this makes sense based on background knowledge - living in a more urban area you exposure to co-pollutants will be different from those living in more rural or suburban areas. We examine summary statistics once more by urbanicity status using the `dplyr` functions. We pipe (`%>%`) the data set to a  `filter()` function and subset based on urbanicity and then pipe to a `summary()` function:
+
+
+```{r, class.source = 'fold-show'}
+coalplant %>%
+  filter(urbanicity==1) %>%
+  summary()
+
+coalplant %>%
+  filter(urbanicity==0) %>%
+  summary()
+
+
+```
+
+As part of the exploratory data analysis, we want to create a correlation plot. We first create a vector of co-pollutants or exposures. Then we calculate the correlations using the `cor()` function on the data set, only subsetting to the co-pollutant columns (`cor(coalplant[, exposures])`). Finally, we use the `ggcorrplot()` function from the `ggcorrplot` package to create the plot:
+
+```{r, class.source = 'fold-show'}
+exposures <- c("as", "be","cd")
+corr <- cor(coalplant[, exposures])
+ggcorrplot(corr)
+
+```
+
+
+We also observe high-correlations among the three exposures.
+
+We will use a linear model using the `lm()` function in `R`. We include interactions between urbanicity and each of the three exposure pollutants, as well as interactions between the exposures as well. We look at model diagnostic plots using the `plot()` function and model summary statistics using the `summary()` function:
+
+
+```{r, class.source = 'fold-show'}
+mdimod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity + as*be + as*cd + be*cd, data=coalplant)
+plot(mdimod)
+summary(mdimod)
+
+```
+
+Under the "natural course" (*nc*) (coal-fire power plant continues to operate), we can estimate the average joint effect of the three exposures on a given individual by taking the mean of the predictions:
+
+```{r, class.source = 'fold-show'}
+
+mean(predict(mdimod))
+```
+
+
+Under the natural course, where the coal-fire power plant continues to emit arsenic, beryllium, and cadmium, we expect the average MDI of a given child to be `r round(mean(predict(mdimod)),3)`.
+
+In other words, we are expecting no reduction in any of the exposures. More explicitly, we can use the `mutate()` and `predict()` functions to more explicitly calculate the same thing. First, we pipe (`%>%`) the data set to the `mutate()` function, which allows us to create new variables in the data set. We multiply each of the co-pollutants by the percent reduction expected. In the natural course case, we expect *no reduction*, or 100%-0%. We create this new data set called `dat_nc` for prediction and use the `predict()` function to use the `mdimod` model to predict on the new data set, `dat_nc`. Lastly, we take the `mean()` of those predictions to get our joint effect estimate under no reductions:
+
+```{r, class.source = 'fold-show'}
+#create new data set for prediction
+dat_nc <- coalplant %>%
+    mutate(as = as*(1-0.00), #no reduction in as
+         be = be*(1-0.00), #no reduction in be
+         cd = cd*(1-0.00)) #no reduction in cd
+  
+#predict mean MDI 
+(nc <- mean(predict(mdimod, newdata = dat_nc)))
+  
+```
+
+
+
+
+Suppose that based on prior research, we know that 91% of arsenic, 96% of beryllium, and 45% of cadmium ambient levels come from a local coal-fired power plant. One **joint effect** of interest would be what would happen if we reduced the exposures by the proportion expected by decommissioning the power plant? 
+
+```{r, eval=answerkey, echo=answerkey}
+#create new data set based on new intervention
+dat_no_coal <- coalplant %>%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+#predict mean MDI 
+(no_coal <- mean(predict(mdimod, newdata = dat_no_coal)))
+  
+  
+```
+
+
+What would be the joint effect from only setting arsenic levels to 0?
+
+```{r, eval=answerkey, echo=answerkey}
+dat_no_as <- coalplant %>%
+  mutate(as = as*0)
+#predict mean MDI 
+(no_as <- mean(predict(mdimod, newdata = dat_no_as)))
+```
+
+
+What would be the joint effect from only setting beryllium levels to 0?
+
+```{r, eval=answerkey, echo=answerkey}
+dat_no_be <- coalplant %>%
+  mutate(be = be*0)
+#predict mean MDI 
+(no_be <- mean(predict(mdimod, newdata = dat_no_be)))
+```
+
+
+What would be the joint effect from only setting cadmium levels to 0?
+
+```{r, eval=answerkey, echo=answerkey}
+dat_no_cd <- coalplant %>%
+  mutate(cd = cd*0)
+#predict mean MDI 
+(no_cd <- mean(predict(mdimod, newdata = dat_no_cd)))
+```
+
+```{r, eval=answerkey, echo=answerkey, results='asis', class.source = 'fold-show'}
+c(naturalcourse = nc, 
+  no_coal = no_coal, 
+  no_arsenic = no_as, 
+  no_beryllium = no_be, 
+  no_cadmium = no_cd) %>%
+  knitr::kable(col.names = c("Model","Predicted Mean MDI"))
+
+```
+<!-- How would we estimate mean MDI under each intervention? -->
+
+Under *causal assumptions*, these estimates are equal to counterfactual means under the hypothetical means.
+
+If we wanted to estimate the effect of decommissioning the power plant, we could subtract the mean expected MDI under the natural course from the mean expected MDI under the intervention:
+
+$$\Delta \bar{MDI} = E(MDI^{as\times [1-0.96]; be\times[1-0.91]; cd\times[1-0.45]}) - E(MDI^{as;be;cd}) $$
+
+```{r, eval=answerkey, echo=answerkey}
+no_coal-nc
+
+```
+
+By decomissioning the coal-fire power plant, we can expect and increase of `r round(no_coal-nc,3)` MDI of 2 year olds.
+
+
+## Bootstrapping
+
+
+When using the g-formula, bootstrapping is odten the only way to get valid confidence intervals, though it can be computationally-intensive. Briefly, bootstrapping uses resampling of the data to create an empirical distribution. From that, we can estimate the standard errors of the parameter of interest.
+
+In order to obtain valid confidence intervals, we must bootstrap using the `boot` package. We will create a `function` to loop through the sampled data, estimate the joint effects under the different scenarios `R=500` times. Lastly, the `boot()` function will calculate the *bias* and *standard error* for us. We will then be able to calculate *bootstrapped confidence intervals*.
+
+First, the function will take the arguments, `data` and `index`. Inside the function, we will sample the data set with replacement and create a new resampled data set called `mcsample`. We then will run the same linear model on the resampled data and store those results in the object, `bootmod`. Then, for each of the scenarios explored above, we create the new data sets and then take the mean predictions. In order to be able to replicate results, we use the `set.seed()` function before performing the bootstrapping
+
+```{r, class.source = 'fold-show'}
+bootfunc <- function(data, index){
+  mcsample = data[index,] #resampled data set
+  bootmod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity + as*be + as*cd + be*cd, data=mcsample) #model
+  
+  #scenarios
+  ###natural course
+  dat_nc <- mcsample %>%
+    mutate(as = as*(1-0.00), #no reduction in as
+           be = be*(1-0.00), #no reduction in be
+           cd = cd*(1-0.00)) #no reduction in cd
+  nc <- mean(predict(bootmod, newdata = dat_nc))
+  
+  ###no coal-fire power plant
+  dat_no_coal <- mcsample  %>%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+  no_coal <- mean(predict(bootmod, newdata = dat_no_coal))
+  
+  ###no arsenic
+  dat_no_as <- mcsample  %>%
+  mutate(as = as*0)
+  no_as <- mean(predict(bootmod, newdata = dat_no_as))
+  
+  ###no beryllium
+  dat_no_be <- mcsample %>%
+  mutate(be = be*0)
+  no_be <- mean(predict(bootmod, newdata = dat_no_be))
+  
+  ###no cadmium
+  dat_no_cd <- mcsample  %>%
+  mutate(cd = cd*0)
+  no_cd <- mean(predict(bootmod, newdata = dat_no_cd))
+  
+  #combine estiamtes together to export
+  c(nc_mdi=nc, shutdown=no_coal-nc, attrmdi_cd=no_cd-nc, attrmdi_as=no_as-nc, attrmdi_be=no_be-nc)
+  
+}
+set.seed(2)
+bootsamples = boot(data=coalplant, statistic=bootfunc, R=500)
+bootsamples
+
+```
+
+
+We can look at the first 20 bootstrapped samples for each of the 5 scenarios by accessing the `t` object:
+
+```{r, class.source = 'fold-show'}
+bootsamples$t[1:20,]
+```
+
+To get the standard error we take the standard deviation of the bootstrapped samples using the `sd()` function. We can do this for each of the 5 scenarios  by using `apply()` to apply the `sd()` function to each column:
+
+```{r}
+se = apply(bootsamples$t, 2, sd)
+se
+```
+
+Lastly, we print our table with the bootstrapped estimates and 95% confidence intervals by combining everything using `cbind()`:
+
+```{r}
+print(cbind(estimate=bootsamples$t0, lowerCI=bootsamples$t0-1.96*se, upperCI=bootsamples$t0+1.96*se), 3)
+```
+
+
+By shutting down the coal plant, we would expect an increase in mean MDI of 2 year olds to increase by 2.6 points, relative to doing nothing (natural course). This joint effect results in a larger difference in expected MDI score than completely eliminating any one of the co-pollutants on its own.
+
+The parametric g-formula for a point exposure involves a standard regression model, but allows for more flexibility in inference. 
+
