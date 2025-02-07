@@ -1,11 +1,28 @@
 ---
-title: "Longitudinal G-Formula"
+title: "Cross-Sectional G-Formula"
 author: "A. Keil and M.Kamenetsky"
 date: "2025-02"
 output:
   html_document:
     code_folding: hide
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+answerkey=TRUE
+```
+
+
+
+```{r, class.source = 'fold-show'}
+#Load in libraries
+library(ggplot2) #for plotting
+library(dplyr) #for data cleaning
+library(survival) #for survival analysis
+library(boot) #for bootstrapping
+library(ggcorrplot)
+library(ggdag)
+```
 
 ## Research Questions:
 
@@ -20,7 +37,7 @@ By the end of this tutorial, you will be able to:
 - Develop a model based on an directed acylic graph (DAG)
 - Complete a parametric g-formula analysis using `R` software
 - Estimate different joint effects under different reduction scenarios
-- Bootstrap confidence intervals for effect estimates under different reduction scenarious
+- Bootstrap confidence intervals for effect estimates under different reduction scenarios
 - Interpret results in a causal inference framework
 
 
@@ -35,8 +52,43 @@ By the end of this tutorial, you will be able to:
   - 2) Consistency
   - 3) Positivity
   
-- The parametric g-formula allows us to answer key public health questions, such as expected outcomes under various regimes
+- The parametric g-formula allows us to answer key public health questions, such as expected outcomes under various regimes. It allows us to make inference about effects of interventions or treatments
+- The g-formula is useful for:
+  - target parameters that do not come from a model
+  - estimating population-level impacts
+  - complex, longitudinal data
+  - dynamic exposure and treatment regimes
+  - potential outcomes models
 - In order to get valid confidence intervals, we must use the bootstrap
+
+
+# The g-formula (briefly)
+
+
+<!-- Recall the *Law of Total Probability*: -->
+
+<!-- $$P(A) = \sum_b P(A|B=b)P(B=b)$$ -->
+
+```{r}
+exdag <- ggdag::dagify(A ~ L,
+                         Y ~ L,
+                         Y ~ A)
+
+#set.seed(2)
+set.seed(18)
+ggdag::ggdag(exdag)+
+  theme_void() +
+  ggtitle("Example DAG")
+```
+
+
+
+1) Start with the distribution of observed data: $p(y,a, l)=p(y|a,l)p(a|l)p(l)$
+2) Replace $p(a|l)$ with degenerate distribution $p_d(a|l)$ that is equal to 1 at $A=g$ and is 0 everywhere else
+3) Marginalize over $p(l)$: $\int p(y|a,l)p_d(g|l)p(l) dl = \int p(y|g,l)p(l)dl$
+4) $p(y|a, l)$ can be estimated via regression and $p(y|a,l,\beta)$ can be estimated by marginalizing over $p(l)$ by taking the sample average of predictions from that model.
+
+
 
 
 # Coal-Fire Power Plant Example: Cross-Sectional G-Formula 
@@ -44,30 +96,18 @@ By the end of this tutorial, you will be able to:
 ## Causal Contrasts
 
 
-```{r setup, include=FALSE, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-answerkey <- TRUE
-```
 
 First, we load in the libraries needed for this analysis. If you have not installed these libraries yet, please be sure to do so using `install.packages("packagename")`.
 
 
-```{r, class.source = 'fold-show'}
-#Load in libraries
-library(ggplot2) #for plotting
-library(dplyr) #for data cleaning
-library(survival) #for survival analysis
-library(boot) #for bootstrapping
-library(ggcorrplot)
-```
 
 
-Our data set is a (simulated) birth cohort of 3,961 individuals, followed up to 2 years of age in a U.S. city. The outcome of interest is the Mental Development Index (MDI) measured at age 2. The exposures of interest are 3 metals known to be emitted from coal-fired power plants: arsenic, beryllium, and cadmium. These eposures are measured as annual ambient levels from birth to age 1 via passive monitoring. The confounder of interest is urbanicity.
+Our data set is a (simulated) birth cohort of 3,961 individuals, followed up to 2 years of age in a U.S. city. The outcome of interest is the Mental Development Index (MDI) measured at age 2. The exposures of interest are 3 metals known to be emitted from coal-fired power plants: arsenic, beryllium, and cadmium. These exposures are measured as annual ambient levels from birth to age 1 via passive monitoring. The confounder of interest is urbanicity.
 
 Our directed acyclic graph (DAG) of the research question is:
 
 ```{r, echo=FALSE}
-library(ggdag)
+
 our_dag <- ggdag::dagify(B ~ U,
                          Y ~ B,
                          Y ~ A, 
@@ -87,11 +127,17 @@ our_dag <- ggdag::dagify(B ~ U,
 
 
 #set.seed(2)
-set.seed(103)
-ggdag::ggdag(our_dag,
+set.seed(18)
+p <- ggdag::ggdag(our_dag,
              use_labels = "label") +
   theme_void() +
   ggtitle("DAG")
+p$layers[[3]]$mapping <- 
+  aes(colour = c("Exposures", "Confounders")[as.numeric(name %in%  c("U","L","Y")) + 1])
+set.seed(18)
+p + scale_color_manual(values = c("black", "#cc2055")) +
+  theme(legend.position = "none")
+
 
 ```
 
@@ -100,14 +146,13 @@ ggdag::ggdag(our_dag,
 Next, we load in the data set `coalplant` and perform an initial exploratory data analysis:
 
 ```{r, class.source = 'fold-show'}
-coalplant <- read.csv("2018_ISEE_causal-master/analyses/data/coalplant.csv")
+coalplant <- read.csv("data/coalplant.csv")
 str(coalplant)
 ```
 
 
 By using the `str()` command, we identify the following 4 variables:
 
-**MORE INFO ON THE DATASET**
 
 - `id`: a unique identifier for each individual 
 - `as`: arsenic levels

@@ -530,7 +530,7 @@ natural logarithm of the radium values when participants were at work
 (<code>atwork==1</code>) and is missing otherwise, as stated in the
 <code>ifelse()</code> function. We briefly explore a summary of the
 data:</p>
-<pre class="r fold-show"><code>miners &lt;- read.csv(&quot;2018_ISEE_causal-master/analyses/data/miners.csv&quot;) %&gt;%
+<pre class="r fold-show"><code>miners &lt;- read.csv(&quot;data/miners.csv&quot;) %&gt;%
   mutate(lograd = ifelse(atwork==1, log(rad), NA))
 str(miners)</code></pre>
 <pre><code>## &#39;data.frame&#39;:    3601 obs. of  14 variables:

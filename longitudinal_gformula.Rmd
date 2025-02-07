@@ -97,7 +97,7 @@ These are considered to be *dynamic regimes*, in that at work, exposure will be 
 We load in the data set `miners` using `read.csv()` function. We pipe (`%>%`) that data to the `mutate()` function to create a new variable (`lograd`), which we will use later. This variable takes the natural logarithm of the radium values when participants were at work (`atwork==1`) and is missing otherwise, as stated in the `ifelse()` function. We briefly explore a summary of the data:
 
 ```{r, class.source = 'fold-show'}
-miners <- read.csv("2018_ISEE_causal-master/analyses/data/miners.csv") %>%
+miners <- read.csv("data/miners.csv") %>%
   mutate(lograd = ifelse(atwork==1, log(rad), NA))
 str(miners)
 
