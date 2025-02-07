@@ -3,8 +3,10 @@ This repository contains materials for the Causal Inference Workshop presented a
 
 The contents of this repository include:
 
-*TODO*
-
+- *cross_sectional_gformula.Rmd*: RMarkdown document containing the R code needed to conduct a cross-sectional analysis using the parametric g-formula. Functions are included within the Rmd document. The HTML document contains the rendered version.
+- *longitudinal_gformula.Rmd*: RMarkdown document containing the R code needed to conduct a longitudinal analysis using the parametric g-formula. Functions are included within the Rmd document. The HTML document contains the rendered version.
+- *data/coalplant.csv*: data set used for the cross-sectional g-formula data example.
+- *data/miners.csv*: data set used for the longitudinal g-formula data example.
 
 **Installation**
 
