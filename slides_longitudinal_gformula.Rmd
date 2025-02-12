@@ -1,0 +1,16 @@
+---
+title: "Longitudinal G-Formula"
+author: "A. Keil and M.Kamenetsky"
+date: "`r Sys.Date()`"
+output: 
+  ioslides_presentation:
+    css: 'scrollable_slides.css'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,cache=TRUE)
+answerkey=TRUE
+```
+
+
+
