@@ -1,0 +1,370 @@
+---
+title: "Cross-Sectional G-Formula"
+author: "A. Keil and M.Kamenetsky"
+date: "`r Sys.Date()`"
+output: 
+  ioslides_presentation:
+    css: 'scrollable_slides.css'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,cache=TRUE)
+answerkey=TRUE
+```
+
+
+
+<!-- ```{r, echo=FALSE} -->
+<!-- exdag <- ggdag::dagify(A ~ L, -->
+<!--                          Y ~ L, -->
+<!--                          Y ~ A) -->
+
+<!-- #set.seed(2) -->
+<!-- set.seed(18) -->
+<!-- ggdag::ggdag(exdag)+ -->
+<!--   theme_void() + -->
+<!--   ggtitle("Example DAG") -->
+<!-- ``` -->
+
+
+## The g-formula
+
+-   The parametric g-formula allows us to answer key public health questions, such as expected outcomes under various regimes. It allows us to make inference about effects of interventions or treatments
+-   The g-formula is useful for:
+    -   target parameters that do not come from a model
+    -   estimating population-level impacts
+    -   complex, longitudinal data
+    -   dynamic exposure and treatment regimes
+    -   potential outcomes models
+-   In order to get valid confidence intervals, we must use the bootstrap
+
+<!-- ## The g-formula -->
+
+<!-- 1)  Start with the distribution of observed data: $p(y,a, l)=p(y|a,l)p(a|l)p(l)$ -->
+<!-- 2)  Replace $p(a|l)$ with degenerate distribution $p_d(a|l)$ that is equal to 1 at $A=g$ and is 0 everywhere else -->
+<!-- 3)  Marginalize over $p(l)$: $\int p(y|a,l)p_d(g|l)p(l) dl = \int p(y|g,l)p(l)dl$ -->
+<!-- 4)  $p(y|a, l)$ can be estimated via regression and $p(y|a,l,\beta)$ can be estimated by marginalizing over $p(l)$ by taking the sample average of predictions from that model. -->
+
+
+## Coal-Fire Power Plant Example
+
+<!-- - To estimate the effects of radon on all cause mortality in a dataset of uranaium mine workers -->
+
+**To estimate the joint effects of air co-pollutants from a coal-fired power plant on 2 year old mental development index (MDI) score under various reduction scenarios**
+
+-   Develop a model based on an directed acylic graph (DAG)
+-   Complete a parametric g-formula analysis using `R` software
+-   Estimate different joint effects under different reduction scenarios
+-   Bootstrap confidence intervals for effect estimates under different reduction scenarios
+-   Interpret results in a causal inference framework
+
+## Install Packages
+
+You will first need to install each packages with `install.packages("packagename")`. Once you have installed once, you may call the package using the `library()` function:
+
+```{r}
+#Load in libraries
+library(ggplot2) #for plotting
+library(dplyr) #for data cleaning
+library(survival) #for survival analysis
+library(boot) #for bootstrapping
+
+```
+
+## The Data
+
+Our data set is a (simulated) birth cohort of **3,961** individuals, followed up to 2 years of age in a U.S. city. The outcome of interest is the **Mental Development Index (MDI)** measured at age 2.
+
+The exposures of interest are 3 metals known to be emitted from coal-fired power plants: **arsenic**, **beryllium**, and **cadmium**. 
+
+These exposures are measured as annual ambient levels from birth to age 1 via passive monitoring. 
+
+The confounder of interest is **urbanicity**.
+
+
+## The DAG
+
+```{r, echo=FALSE, fig.height=4, fig.width=8}
+
+our_dag <- ggdag::dagify(B ~ U,
+                         Y ~ B,
+                         Y ~ A, 
+                         Y ~ C,
+                         A ~ U,
+                         C~ U,
+                         Y ~ L,
+                         A ~ L,
+                         B ~ L,
+                         C~ L,
+                         labels = c("B" = "Beryllium",
+                                    "U" = "Coal plant",
+                                    "Y" = "MDI",
+                                    "A" = "Arsenic",
+                                    "C" = "Cadmium",
+                                    "L" = "Urbanicity"))
+
+
+#set.seed(2)
+set.seed(18)
+p <- ggdag::ggdag(our_dag,
+             use_labels = "label") +
+  theme_void() 
+  #ggtitle("DAG")
+p$layers[[3]]$mapping <- 
+  aes(colour = c("Exposures", "Confounders")[as.numeric(name %in%  c("U","L","Y")) + 1])
+set.seed(18)
+p + scale_color_manual(values = c("black", "#cc2055")) +
+  theme(legend.position = "none")
+
+
+```
+
+## `coalplant`
+
+```{r}
+coalplant <- read.csv("data/coalplant.csv")
+str(coalplant)
+```
+
+## Regime 1: Natural Course
+
+<!-- TODO: DEFINE -->
+
+<!-- We will use a linear model using the `lm()` function in `R`. We include interactions between urbanicity and each of the three exposure pollutants, as well as interactions between the exposures as well. We look at model diagnostic plots using the `plot()` function and model summary statistics using the `summary()` function: -->
+
+The natural course regime assumes no reductions in any of the exposures.
+
+
+```{r, class.source = 'fold-show'}
+mdimod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity +
+              as*be + as*cd + be*cd, data=coalplant)
+mean(predict(mdimod))
+
+
+```
+
+
+Under the natural course, where the coal-fire power plant continues to emit arsenic, beryllium, and cadmium, we expect the average MDI of a given child to be `r round(mean(predict(mdimod)),3)`.
+
+
+
+## Regime 1: Natural Course 
+
+
+In the natural course case, we expect *no reduction*, or 100%-0%. We are expecting no reduction in any of the exposures. We multiply each of the co-pollutants by the percent reduction expected. 
+
+<!-- In the natural course case, we expect *no reduction*, or 100%-0%. We create this new data set called `dat_nc` for prediction and use the `predict()` function to use the `mdimod` model to predict on the new data set, `dat_nc`. Lastly, we take the `mean()` of those predictions to get our joint effect estimate under no reductions: -->
+
+```{r, class.source = 'fold-show'}
+#create new data set for prediction
+dat_nc <- coalplant %>%
+    mutate(as = as*(1-0.00), #no reduction in as
+         be = be*(1-0.00), #no reduction in be
+         cd = cd*(1-0.00)) #no reduction in cd
+  
+#predict mean MDI 
+(nc <- mean(predict(mdimod, newdata = dat_nc)))
+  
+```
+
+Under the natural course, where the coal-fire power plant continues to emit arsenic, beryllium, and cadmium, we expect the average MDI of a given child at age 2 to be `r round(nc,3)`.
+
+
+## Regime 2: Partial Reductions
+
+Suppose that based on prior research, we know that 91% of arsenic, 96% of beryllium, and 45% of cadmium ambient levels come from a local coal-fired power plant. One **joint effect** of interest would be what would happen if we reduced the exposures by the proportion expected by decommissioning the power plant? 
+
+```{r, eval=answerkey, echo=answerkey}
+#create new data set based on new intervention
+dat_no_coal <- coalplant %>%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+#predict mean MDI 
+(no_coal <- mean(predict(mdimod, newdata = dat_no_coal)))
+  
+  
+```
+
+Under partial reductions, we expect the average MDI of a given child at age 2 to be `r round(no_coal,3)`.
+
+
+
+## Regimes 3: Only Arsenic Set to 0
+
+```{r}
+dat_no_as <- coalplant %>%
+  mutate(as = as*0)
+#predict mean MDI 
+(no_as <- mean(predict(mdimod, newdata = dat_no_as)))
+```
+
+
+Under arsenic set to 0, we expect the average MDI of a given child at age 2 to be `r round(no_as,3)`.
+
+
+## Regime 4: Only Beryllium Set to 0
+
+```{r}
+
+dat_no_be <- coalplant %>%
+  mutate(be = be*0)
+#predict mean MDI 
+(no_be <- mean(predict(mdimod, newdata = dat_no_be)))
+```
+
+Under beriyllium set to 0, we expect the average MDI of a given child at age 2 to be `r round(no_be,3)`.
+
+
+## Regime 5: Only Cadmium Set to 0
+
+```{r}
+dat_no_cd <- coalplant %>%
+  mutate(cd = cd*0)
+#predict mean MDI 
+(no_cd <- mean(predict(mdimod, newdata = dat_no_cd)))
+```
+
+Under cadmium set to 0, we expect the average MDI of a given child at age 2 to be `r round(no_cd,3)`.
+
+## Summary of Regimes 3-5
+
+
+```{r}
+c(naturalcourse = nc, 
+  no_coal = no_coal, 
+  no_arsenic = no_as, 
+  no_beryllium = no_be, 
+  no_cadmium = no_cd) %>%
+  knitr::kable(col.names = c("Model","Predicted Mean MDI"))
+
+```
+
+
+## Decommissioning
+
+Under *causal assumptions*, these estimates are equal to counterfactual means under the hypothetical means.
+
+If we wanted to estimate the effect of decommissioning the power plant, we could subtract the mean expected MDI under the natural course from the mean expected MDI under the intervention:
+
+$$\Delta \bar{MDI} = E(MDI^{as\times [1-0.96]; be\times[1-0.91]; cd\times[1-0.45]}) - \\ E(MDI^{as;be;cd}) $$
+
+## Decommissioning
+
+
+```{r, eval=answerkey, echo=answerkey}
+no_coal-nc
+
+```
+
+By decommissioning the coal-fire power plant, we can expect and increase of `r round(no_coal-nc,3)` MDI of 2 year olds.
+
+
+
+## Bootstrapping
+
+When using the g-formula, bootstrapping is often the only way to get valid confidence intervals, though it can be computationally-intensive. 
+
+Bootstrapping uses resampling of the data to create an empirical distribution. From that, we can estimate the standard errors of the parameter of interest.
+
+In order to obtain valid confidence intervals, we must bootstrap using the `boot` package. We will create a `function` to loop through the sampled data, estimate the joint effects under the different scenarios `R=500` times. Lastly, the `boot()` function will calculate the *bias* and *standard error* for us. We will then be able to calculate *bootstrapped confidence intervals*.
+
+
+
+## 
+
+```{r, class.source = 'fold-show'}
+bootfunc <- function(data, index){
+  mcsample = data[index,] #resampled data set
+  bootmod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity +
+                 as*be + as*cd + be*cd, data=mcsample) #model
+  
+  #scenarios
+  ###natural course
+  dat_nc <- mcsample %>%
+    mutate(as = as*(1-0.00), #no reduction in as
+           be = be*(1-0.00), #no reduction in be
+           cd = cd*(1-0.00)) #no reduction in cd
+  nc <- mean(predict(bootmod, newdata = dat_nc))
+  
+  ###no coal-fire power plant
+  dat_no_coal <- mcsample  %>%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+  no_coal <- mean(predict(bootmod, newdata = dat_no_coal))
+  
+  ###no arsenic
+  dat_no_as <- mcsample  %>%
+  mutate(as = as*0)
+  no_as <- mean(predict(bootmod, newdata = dat_no_as))
+  
+  ###no beryllium
+  dat_no_be <- mcsample %>%
+  mutate(be = be*0)
+  no_be <- mean(predict(bootmod, newdata = dat_no_be))
+  
+  ###no cadmium
+  dat_no_cd <- mcsample  %>%
+  mutate(cd = cd*0)
+  no_cd <- mean(predict(bootmod, newdata = dat_no_cd))
+  
+  #combine estiamtes together to export
+  c(nc_mdi=nc, shutdown=no_coal-nc, attrmdi_cd=no_cd-nc, 
+    attrmdi_as=no_as-nc, attrmdi_be=no_be-nc)
+  
+}
+set.seed(2)
+bootsamples = boot(data=coalplant, statistic=bootfunc, R=500)
+bootsamples
+
+```
+
+
+## Bootstrapping Results
+
+We can look at the first 20 bootstrapped samples for each of the 5 scenarios by accessing the `t` object:
+
+```{r, class.source = 'fold-show'}
+bootsamples$t[1:20,]
+```
+
+
+## Bootstrapping Results
+
+
+To get the standard error we take the standard deviation of the bootstrapped samples using the `sd()` function. We can do this for each of the 5 scenarios  by using `apply()` to apply the `sd()` function to each column:
+
+```{r}
+se = apply(bootsamples$t, 2, sd)
+se
+```
+
+## Final Interpretation
+
+```{r}
+print(cbind(estimate=bootsamples$t0, 
+            lowerCI=bootsamples$t0-1.96*se, 
+            upperCI=bootsamples$t0+1.96*se), 3)
+```
+
+
+
+By shutting down the coal plant, we would expect an increase in mean MDI of 2 year olds to increase by 2.6 points, relative to doing nothing (natural course). This joint effect results in a larger difference in expected MDI score than completely eliminating any one of the co-pollutants on its own.
+
+
+## Final Thoughts
+
+
+The parametric g-formula for a point exposure involves a standard regression model, but allows for more flexibility in inference. 
+
+## Thank You!
+
+Maria Kamenetsky (maria.kamenetsky@nih.gov)
+
+Alex Keil (alex.keil@nih.gov)
+
+
+
+
+

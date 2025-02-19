@@ -11,7 +11,7 @@
 
 <meta name="author" content="A. Keil and M.Kamenetsky" />
 
-<meta name="date" content="2025-02-07" />
+<meta name="date" content="2025-02-19" />
 
 <title>Longitudinal G-Formula</title>
 
@@ -440,7 +440,7 @@ display: none;
 
 <h1 class="title toc-ignore">Longitudinal G-Formula</h1>
 <h4 class="author">A. Keil and M.Kamenetsky</h4>
-<h4 class="date">2025-02-07</h4>
+<h4 class="date">2025-02-19</h4>
 
 </div>
 
@@ -453,7 +453,7 @@ library(boot) #for bootstrapping</code></pre>
 <div id="research-questions" class="section level2">
 <h2>Research Questions:</h2>
 <p>To estimate the risk difference of four different treatment regimes
-of radium reduction on uranium mine workers.</p>
+of radon reduction on uranium mine workers.</p>
 <pre class="r"><code>library(ggdag)
 longdag &lt;- ggdag::dagify(L2 ~ L1,
                          A1 ~ L1,
@@ -506,11 +506,10 @@ pseudo-population</li>
 <div id="uranium-mine-workers-data-example-longitudinal-g-formula" class="section level1">
 <h1>Uranium Mine Workers Data Example: Longitudinal G-Formula</h1>
 <p>Consider a longitudinal study where you have two data measured at two
-(or more) time points. If we want to estimate <strong>TODO</strong>, we
-can explore different realizations under different regimes, such as
-“always exposed”, “never exposed”, “natural course”. To do so, we can
-simulate individuals through time using the directed acyclic graph
-(DAG)</p>
+(or more) time points. If we want to estimate joint effects, we can
+explore different realizations under different regimes, such as “always
+exposed”, “never exposed”, “natural course”. To do so, we can simulate
+individuals through time using the directed acyclic graph (DAG)</p>
 <p>The target population consists of uranium miners. We would like to
 estimate the risk (or cumulative incidence) from 0-20 years. We want to
 estimate the following regimes:</p>
@@ -526,7 +525,7 @@ exposure will be below the limit and unexposed otherwise.</p>
 <code>read.csv()</code> function. We pipe (<code>%&gt;%</code>) that
 data to the <code>mutate()</code> function to create a new variable
 (<code>lograd</code>), which we will use later. This variable takes the
-natural logarithm of the radium values when participants were at work
+natural logarithm of the radon values when participants were at work
 (<code>atwork==1</code>) and is missing otherwise, as stated in the
 <code>ifelse()</code> function. We briefly explore a summary of the
 data:</p>
@@ -557,11 +556,11 @@ variables:</p>
 work</li>
 <li><code>dead</code>: binary indicator for dead (1) or not dead
 (0)</li>
-<li><code>rad</code>: radium measurement</li>
-<li><code>rad_lag1</code>: radium measurement lagged by 1 time
+<li><code>rad</code>: radon measurement</li>
+<li><code>rad_lag1</code>: radon measurement lagged by 1 time
 period</li>
-<li><code>cum_rad</code>: cumulative radium exposure</li>
-<li><code>cum_rad_lag1</code>: cumulative radium exposure lagged by 1
+<li><code>cum_rad</code>: cumulative radon exposure</li>
+<li><code>cum_rad_lag1</code>: cumulative radon exposure lagged by 1
 time period</li>
 <li><code>atwork</code>: binary indicator of if exposure took place at
 work (1) or not at work (0)</li>
@@ -573,8 +572,8 @@ during work (1) or not (0)</li>
 during work (1) or not (0) lagged by 1 time period</li>
 <li><code>smoker</code>: binary indicator of individual was a smoker (1)
 or not a smoker (0)</li>
-<li><code>lograd</code>: natural logarithm of the radium measurement
-when at work</li>
+<li><code>lograd</code>: natural logarithm of the radon measurement when
+at work</li>
 </ul>
 <pre class="r"><code>summary(miners[, 2:13])</code></pre>
 <pre><code>##      intime          outtime               dead             rad         
@@ -601,7 +600,7 @@ when at work</li>
 <p>First, extract baseline data at <code>intime=0</code> using the
 <code>filter()</code> function. We also create a new variable called
 <code>lograd</code> using the <code>mutate()</code> function which takes
-the natural logarithm of the radium measurement where participants were
+the natural logarithm of the radon measurement where participants were
 at work (<code>atwork==1</code>) and are missing (<code>NA</code>)
 otherwise. We set <code>N</code> to be equal to the number of
 observations (or <code>nrow()</code>):</p>
@@ -619,8 +618,8 @@ set.seed(12325)
 mcdata &lt;- slice(baseline_data, sample(1:N, size = mc_iter, replace=TRUE))</code></pre>
 <p>We develop three different models:</p>
 <ol style="list-style-type: decimal">
-<li>Pooled linear model for (log) radium exposure while at work. This is
-model is the annual log-radium exposure: <span class="math inline">\(rad_i = \beta_0 + \beta_1 outtime_i + \beta_2
+<li>Pooled linear model for (log) radon exposure while at work. This is
+model is the annual log-radon exposure: <span class="math inline">\(rad_i = \beta_0 + \beta_1 outtime_i + \beta_2
 cum\_rad\_lag1_i + \beta_3 smoker_i + \varepsilon_i\)</span></li>
 <li>Pooled logistic model for leaving work (at the end of the year)
 while at work (where <span class="math inline">\(p_i\)</span> is the
@@ -947,8 +946,8 @@ it <code>mcdata</code>.</li>
 total years for the pseudo-cohort to be followed. In this study, we set
 <code>endtime=20</code></li>
 <li><span class="citation">@param</span> <code>mod_e</code> Pooled
-linear model for (log) radium exposure while at work. This is model is
-the annual log-radium exposure (defined above). This model is also
+linear model for (log) radon exposure while at work. This is model is
+the annual log-radon exposure (defined above). This model is also
 created above and stored as the object <code>mod_e</code>.</li>
 <li><span class="citation">@param</span> <code>mod_w</code> Pooled
 logistic model for leaving work (at the end of the year) while at work.
@@ -1239,9 +1238,9 @@ knitr::kable(gf_cuminc_unex, caption = &quot;Cumulative incidence: unexposed reg
                       mod_e=mod_e, mod_w=mod_w, mod_d=mod_d, 
                       seed=12325)
 gf_cuminc_exp3 &lt;- with(exp3, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
-knitr::kable(gf_cuminc_exp3, caption = &quot;Cumulative incidence: radium&gt;0.3 exposure regime&quot;)</code></pre>
+knitr::kable(gf_cuminc_exp3, caption = &quot;Cumulative incidence: radon&gt;0.3 exposure regime&quot;)</code></pre>
 <table>
-<caption>Cumulative incidence: radium&gt;0.3 exposure regime</caption>
+<caption>Cumulative incidence: radon&gt;0.3 exposure regime</caption>
 <thead>
 <tr class="header">
 <th align="right">time</th>
@@ -1341,9 +1340,9 @@ knitr::kable(gf_cuminc_exp3, caption = &quot;Cumulative incidence: radium&gt;0.3
                       mod_e=mod_e, mod_w=mod_w, mod_d=mod_d, 
                       seed=12325)
 gf_cuminc_exp1 &lt;- with(exp1, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
-knitr::kable(gf_cuminc_exp1, caption = &quot;Cumulative incidence: radium&gt;0.1 exposure regime&quot;)</code></pre>
+knitr::kable(gf_cuminc_exp1, caption = &quot;Cumulative incidence: radon&gt;0.1 exposure regime&quot;)</code></pre>
 <table>
-<caption>Cumulative incidence: radium&gt;0.1 exposure regime</caption>
+<caption>Cumulative incidence: radon&gt;0.1 exposure regime</caption>
 <thead>
 <tr class="header">
 <th align="right">time</th>

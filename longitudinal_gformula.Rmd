@@ -24,7 +24,7 @@ library(boot) #for bootstrapping
    
 ## Research Questions:
 
-To estimate the risk difference of four different treatment regimes of radium reduction on uranium mine workers.
+To estimate the risk difference of four different treatment regimes of radon reduction on uranium mine workers.
 
 
 
@@ -79,7 +79,7 @@ The Monte Carlo algorithm can be used to estimate $E(Y^g_2)$ or $p(y_2^g)$:
 
 # Uranium Mine Workers Data Example: Longitudinal G-Formula
 
-Consider a longitudinal study where you have two data measured at two (or more) time points. If we want to estimate **TODO**, we can explore different realizations under different regimes, such as "always exposed", "never exposed", "natural course". To do so, we can simulate individuals through time using the directed acyclic graph (DAG)
+Consider a longitudinal study where you have two data measured at two (or more) time points. If we want to estimate joint effects, we can explore different realizations under different regimes, such as "always exposed", "never exposed", "natural course". To do so, we can simulate individuals through time using the directed acyclic graph (DAG)
 
 
 
@@ -94,7 +94,7 @@ These are considered to be *dynamic regimes*, in that at work, exposure will be 
 
 
 
-We load in the data set `miners` using `read.csv()` function. We pipe (`%>%`) that data to the `mutate()` function to create a new variable (`lograd`), which we will use later. This variable takes the natural logarithm of the radium values when participants were at work (`atwork==1`) and is missing otherwise, as stated in the `ifelse()` function. We briefly explore a summary of the data:
+We load in the data set `miners` using `read.csv()` function. We pipe (`%>%`) that data to the `mutate()` function to create a new variable (`lograd`), which we will use later. This variable takes the natural logarithm of the radon values when participants were at work (`atwork==1`) and is missing otherwise, as stated in the `ifelse()` function. We briefly explore a summary of the data:
 
 ```{r, class.source = 'fold-show'}
 miners <- read.csv("data/miners.csv") %>%
@@ -110,16 +110,16 @@ By using the `str()` command, we have the following 13 variables:
 - `intime`: time during which participant is at work
 - `outtime`: time during which participant is not at work
 - `dead`: binary indicator for dead (1) or not dead (0)
-- `rad`: radium measurement
-- `rad_lag1`: radium measurement lagged by 1 time period
-- `cum_rad`: cumulative radium exposure
-- `cum_rad_lag1`: cumulative radium exposure lagged by 1 time period
+- `rad`: radon measurement
+- `rad_lag1`: radon measurement lagged by 1 time period
+- `cum_rad`: cumulative radon exposure
+- `cum_rad_lag1`: cumulative radon exposure lagged by 1 time period
 - `atwork`: binary indicator of if exposure took place at work (1) or not at work (0)
 - `leavework`: binary indicator of if exposure was on leave from work (1) or not on leave from work (0) **TODO**
 - `durwork`: binary indicator of if exposure occurred during work (1) or not (0)
 - `durwork_lag1`: binary indicator of if exposure occurred during work (1) or not (0) lagged by 1 time period
 - `smoker`: binary indicator of individual was a smoker (1) or not a smoker (0)
-- `lograd`: natural logarithm of the radium measurement when at work
+- `lograd`: natural logarithm of the radon measurement when at work
 
 
 ```{r}
@@ -130,7 +130,7 @@ summary(miners[, 2:13])
 
 
 
-First, extract baseline data at `intime=0` using the `filter()` function. We also create a new variable called `lograd` using the `mutate()` function which takes the natural logarithm of the radium measurement where participants were at work (`atwork==1`) and are missing (`NA`) otherwise. We set `N` to be equal to the number of observations (or `nrow()`):
+First, extract baseline data at `intime=0` using the `filter()` function. We also create a new variable called `lograd` using the `mutate()` function which takes the natural logarithm of the radon measurement where participants were at work (`atwork==1`) and are missing (`NA`) otherwise. We set `N` to be equal to the number of observations (or `nrow()`):
 
 
 ```{r, class.source = 'fold-show'}
@@ -152,7 +152,7 @@ mcdata <- slice(baseline_data, sample(1:N, size = mc_iter, replace=TRUE))
 
 We develop three different models:
 
-1) Pooled linear model for (log) radium exposure while at work. This is model is the annual log-radium exposure: $rad_i = \beta_0 + \beta_1 outtime_i + \beta_2 cum\_rad\_lag1_i + \beta_3 smoker_i + \varepsilon_i$
+1) Pooled linear model for (log) radon exposure while at work. This is model is the annual log-radon exposure: $rad_i = \beta_0 + \beta_1 outtime_i + \beta_2 cum\_rad\_lag1_i + \beta_3 smoker_i + \varepsilon_i$
 2) Pooled logistic model for leaving work (at the end of the year) while at work (where $p_i$ is the probability of leaving work). This model the time-varying confounder of employment: $\log(\frac{p_i}{1-p_i}) = \beta_0 + \beta_1outtime_i + \beta_2 outtime_i^2 + \beta_3 rad\_lag1_i + \beta_4 cum\_rad\_lag1 + \beta_5 smoker_i$
 3) Pooled logistic model for death  (where $p_i$ is the probability of death). This models the time-varying outcome of death: $\log(\frac{p_i}{1-p_i}) = \beta_0 + \beta_1 outtime_i + \beta_2 atwork_i + \beta_3 cum\_rad_i + \beta_4 cum\_rad^2_i + \beta_4 smoker_i + \beta_5 cum\_rad_i*smoker_i$
 
@@ -340,7 +340,7 @@ For the other 3 regimes, we must do the same thing. In order to make things more
 - @param `intervention` Intervention or treatment regime. Options are `NULL`, 0, `rad>0.3`, or `rad>0.1`, as defined above.
 - @param `pseudo_cohort_bl` Pseudo-cohort at baseline. We create this object above and have called it `mcdata`.
 - @param `endtime` Number of total years for the pseudo-cohort to be followed. In this study, we set `endtime=20`
-- @param `mod_e` Pooled linear model for (log) radium exposure while at work. This is model is the annual log-radium exposure (defined above). This model is also created above and stored as the object `mod_e`.
+- @param `mod_e` Pooled linear model for (log) radon exposure while at work. This is model is the annual log-radon exposure (defined above). This model is also created above and stored as the object `mod_e`.
 - @param `mod_w` Pooled logistic model for leaving work (at the end of the year) while at work. This models the time-varying confounder of employment. This model is also created above and stored as the object `mod_w`.
 - @param `mod_d` Pooled logistic model for death. This models the time-varying outcome of death. This model is also created above and stored as the object `mod_d`.
 - @param `seed` Seed value we input so that the results are reproducible. 
@@ -455,7 +455,7 @@ exp3 = gformula_risks(intervention='rad>0.3',
                       mod_e=mod_e, mod_w=mod_w, mod_d=mod_d, 
                       seed=12325)
 gf_cuminc_exp3 <- with(exp3, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
-knitr::kable(gf_cuminc_exp3, caption = "Cumulative incidence: radium>0.3 exposure regime")
+knitr::kable(gf_cuminc_exp3, caption = "Cumulative incidence: radon>0.3 exposure regime")
 
 exp1 = gformula_risks(intervention='rad>0.1', 
                       pseudo_cohort_bl=mcdata, 
@@ -463,7 +463,7 @@ exp1 = gformula_risks(intervention='rad>0.1',
                       mod_e=mod_e, mod_w=mod_w, mod_d=mod_d, 
                       seed=12325)
 gf_cuminc_exp1 <- with(exp1, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
-knitr::kable(gf_cuminc_exp1, caption = "Cumulative incidence: radium>0.1 exposure regime")
+knitr::kable(gf_cuminc_exp1, caption = "Cumulative incidence: radon>0.1 exposure regime")
 
 
 ```
