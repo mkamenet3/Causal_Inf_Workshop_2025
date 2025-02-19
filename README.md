@@ -1,4 +1,4 @@
-# CausalInf_Workshop_2025
+# Causal_Inf_Workshop_2025
 This repository contains materials for the Causal Inference Workshop presented at the February 2025 NCI Biostatistics Branch Workshop series, presented by Drs. Alex Keil and Maria Kamenetsky.
 
 The contents of this repository include:
