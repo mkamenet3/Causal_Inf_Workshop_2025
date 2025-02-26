@@ -1,207 +1,44 @@
----
-title: "Longitudinal G-Formula"
-author: "A. Keil and M.Kamenetsky"
-date: "`r Sys.Date()`"
-output:
-  html_document:
-    code_folding: hide
-  pdf_document: default
----
-
-```{r, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,cache=TRUE)
-```
 
-
-```{r, class.source = 'fold-show'}
 #Load in libraries
 library(ggplot2) #for plotting
 library(dplyr) #for data cleaning
 library(survival) #for survival analysis
 library(boot) #for bootstrapping
 
-```
-
-   
-## Research Questions:
-
-To estimate the risk difference of four different treatment regimes of radon reduction on uranium mine workers.
 
 
-
-
-```{r}
-library(ggdag)
-longdag <- ggdag::dagify(L2 ~ L1,
-                         A1 ~ L1,
-                         L2 ~ A1,
-                         A2 ~ A1,
-                         A2 ~ L2,
-                         Y2 ~ A2,
-                         Y2 ~ A1,
-                         Y2 ~ L1,
-                         Y2 ~ L2)
-
-#set.seed(2)
-set.seed(18)
-ggdag::ggdag(longdag)+
-  theme_void() +
-  ggtitle("Example: Longitudinal DAG")
-```
-
-
-
-
-
-
-## Learning Objectives:
-
-By the end of this tutorial, you will be able to:
-
-
-- Complete a parametric g-formula analysis for longitudinal data using `R` software
-- Estimate different joint effects under different reduction scenarios in a longitudinal data set
-
-## Key Points:
-
-
-- Causal assumptions are assumed to be met. They are:
-
-  - 1) Exchangeability
-  - 2) Consistency
-  - 3) Positivity
-  - 4) No interference
-
-
-## Key Points:
-
-
-The Monte Carlo algorithm can be used to estimate $E(Y^g_2)$ or $p(y_2^g)$:
-
-1) Sample with replacement from the target population at time $k=0$, $\hat{p}(l_1) = \hat{p}_n(l_1)$ (**pseudo-population**, $N^g$)
-2) Set $A_1$ equal to $g$ for everyone in the pseudo-population
-3) Simulate values from $L_2$ from $p(l_2|g, l_1)$
-  - For example, a Bernoulli distribution with $\mu = p(l_2|g,l_1)$
-4) Simulate values of $Y_2$ from $p(Y_2|g, l_1, l_2)$
-5) $E(Y^g)$ is the mean of $Y_2$ in the simulated pseudo-population
-
-
-# Uranium Mine Workers Data Example: Longitudinal G-Formula
-
-Consider a longitudinal study where you have two data measured at two (or more) time points. If we want to estimate joint effects, we can explore different realizations under different regimes, such as "always exposed", "never exposed", "natural course". To do so, we can simulate individuals through time using the directed acyclic graph (DAG)
-
-
-
-The target population consists of uranium miners. We would like to estimate the risk (or cumulative incidence) from 0-20 years. We want to estimate the following regimes:
-
-- No intervention ("natural course")
-- 0.3 x 1000 pCi/L-year limit ("slightly below current standard")
-- 0.1 x 1000 pCi/L-year limit ("well below current standard")
-- No exposure ("attributable risk")
-
-These are considered to be *dynamic regimes*, in that at work, exposure will be below the limit and unexposed otherwise.
-
-
-
-We load in the data set `miners` using `read.csv()` function. We pipe (`%>%`) that data to the `mutate()` function to create a new variable (`lograd`), which we will use later. This variable takes the natural logarithm of the radon values when participants were at work (`atwork==1`) and is missing otherwise, as stated in the `ifelse()` function. We briefly explore a summary of the data:
-
-```{r, class.source = 'fold-show'}
 miners <- read.csv("data/miners.csv") %>%
   mutate(lograd = ifelse(atwork==1, log(rad), NA))
 str(miners)
 
-```
 
-
-By using the `str()` command, we have the following 13 variables:
-
-- `id`: a unique identifier for each individual 
-- `intime`: time during which participant is at work
-- `outtime`: time during which participant is not at work
-- `dead`: binary indicator for dead (1) or not dead (0)
-- `rad`: radon measurement
-- `rad_lag1`: radon measurement lagged by 1 time period
-- `cum_rad`: cumulative radon exposure
-- `cum_rad_lag1`: cumulative radon exposure lagged by 1 time period
-- `atwork`: binary indicator of if exposure took place at work (1) or not at work (0)
-- `leavework`: binary indicator of if exposure was on leave from work (1) or not on leave from work (0) **TODO**
-- `durwork`: binary indicator of if exposure occurred during work (1) or not (0)
-- `durwork_lag1`: binary indicator of if exposure occurred during work (1) or not (0) lagged by 1 time period
-- `smoker`: binary indicator of individual was a smoker (1) or not a smoker (0)
-- `lograd`: natural logarithm of the radon measurement when at work
-
-
-```{r}
 summary(miners[, 2:13])
 
 
-```
 
-
-
-First, extract baseline data at `intime=0` using the `filter()` function. We also create a new variable called `lograd` using the `mutate()` function which takes the natural logarithm of the radon measurement where participants were at work (`atwork==1`) and are missing (`NA`) otherwise. We set `N` to be equal to the number of observations (or `nrow()`):
-
-
-```{r, class.source = 'fold-show'}
 baseline_data <- filter(miners, intime==0) 
 N = nrow(baseline_data)
 
-```
 
-Sample with replacement over 20000 realizations (`mc_iter`). To do this, we first set the seed so the analysis can be reproduced (`set.seed(12325)`). We then use the `slice()` function from the `dplyr` package to perform the sampling `mc_iter` times, with replacement (`replace=TRUE`).
-
-```{r, class.source = 'fold-show'}
 # large sample from observed baseline data
 mc_iter = 20000
 set.seed(12325)
 mcdata <- slice(baseline_data, sample(1:N, size = mc_iter, replace=TRUE))
 
-```
 
-
-We develop three different models:
-
-1) Pooled linear model for (log) radon exposure while at work. This is model is the annual log-radon exposure: $rad_i = \beta_0 + \beta_1 outtime_i + \beta_2 cum\_rad\_lag1_i + \beta_3 smoker_i + \varepsilon_i$
-2) Pooled logistic model for leaving work (at the end of the year) while at work (where $p_i$ is the probability of leaving work). This model the time-varying confounder of employment: $\log(\frac{p_i}{1-p_i}) = \beta_0 + \beta_1outtime_i + \beta_2 outtime_i^2 + \beta_3 rad\_lag1_i + \beta_4 cum\_rad\_lag1 + \beta_5 smoker_i$
-3) Pooled logistic model for death  (where $p_i$ is the probability of death). This models the time-varying outcome of death: $\log(\frac{p_i}{1-p_i}) = \beta_0 + \beta_1 outtime_i + \beta_2 atwork_i + \beta_3 cum\_rad_i + \beta_4 cum\_rad^2_i + \beta_4 smoker_i + \beta_5 cum\_rad_i*smoker_i$
-
-
-For model 1, we filter the data such that we are only looking at when participants were at work (`filter(miners, atwork==1)`)
-
-```{r, class.source = 'fold-show'}
 #Model 1: pooled linear model for log(exposure), while at work
 mod_e = lm(lograd ~ outtime + cum_rad_lag1 + smoker, data=filter(miners, atwork==1))
-```
 
-
-For model 2, we filter the data to where participants where either at work or were on leave from work (`filter(miners, atwork==1 | leavework==1)`):
-
-```{r, class.source = 'fold-show'}
 
 # pooled logistic model for leaving work (at the end of the year), while at work
 mod_w = glm(leavework ~ outtime + I(outtime^2) + rad_lag1 + cum_rad_lag1 + smoker, data=filter(miners, atwork==1 | leavework==1), family=binomial())
  
 
-```
 
-
-For model 3, we do not filter the data and use the whole data set of miners:
-
-```{r, class.source = 'fold-show'}
 mod_d = glm(dead ~ outtime + atwork + cum_rad + I(cum_rad*cum_rad) + smoker + smoker*cum_rad, data=miners, family=binomial(link=logit))
   
-```
-
-
-# Treatment Regimes
-
-## Natural Course
-
-Now that we have our three models, we will use them to create predictions under the different treatment regimes. First, we explore the natural course progression. We will do this manually first, and then create a function to make this more reproducible. We start with the pseudo-cohort at baseline we created above (`mcdata`). We set the end time for our hypothetical cohort to be 20 years, which is the follow-up time for which we want to follow this cohort. For each pseudo-person in our new pseudo-cohort, we create a new identifier, `gfid`. For each of the variables in the original data set, we set initial values. 
-
-For the linear exposure model, we also set the error variance as the sum of the squared residuals divided by the residual degrees of freedom. In order to prevent prediction outside of the observed range, we set a limit on the log exposure as `max_e = 7.321276`.
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 N <- nrow(mcdata)
 ncols <- ncol(mcdata)
 pseudo_cohort <- slice(mcdata,rep(1:N, each=20))
@@ -227,20 +64,17 @@ var_e = sum(mod_e$residuals^2)/mod_e$df.residual
 
 # limits on log exposure (keep simulated values in range of observed)
 max_e = 7.321276
+################################################################################################################################
+
+
+
 
 #for the natural course, there is no intervention so we set it to NULL
 intervention <- NULL
 
 head(pseudo_cohort)#check out the first 6 observations of the pseudo-cohort and confirm that initial values were initialized correctly
 
-```
-
-
-Now that the parameters have been set, we simulate time-varying values using a series of for-loops. The outer loop loops over each `t` time period in time periods 1 through 20. 
-
-Depending on which model (leaving work) or if exploring lagged variables, we perform appropriate accounting (ex: starting everyone at work in first period). Then we use the respective three models above (`mod_e`, `mod_w`, `mod_d`) to predict and generate random variables using `rbinom()` or `rnorm()` functions to simulate responses based on those predicted models.
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 set.seed(12325)
 for(t in 1:20){
   # index that keeps track of time
@@ -344,35 +178,13 @@ for(t in 1:20){
   # average that over the population below to get the marginal risk
 } # end time loop
 head(pseudo_cohort)#check out first 6 observations with new predicted values
-```
-
-From our pseudo-cohort under the natural course regime, we want to calculate the cumulative incidence for each year, 1 through 20. To do so, we take the mean cumulative incidence in each year group (`outtime`) across all individuals in the pseudo-cohort. We print our results using the `kable()` function from the `knitr` package
-
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 
 cuminc_nc0 <- with(pseudo_cohort, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
 knitr::kable(cuminc_nc0, caption = "Cumulative incidence: unexposed regime (hard code)")
 
 
-```
-
-
-For the other 3 regimes, we must do the same thing. In order to make things more reproducible, we will create a function called `gformula_risks()` which will allow us to perform the same procedure. The parameters to the function are:
-
-- @param `intervention` Intervention or treatment regime. Options are `NULL`, 0, `rad>0.3`, or `rad>0.1`, as defined above.
-- @param `pseudo_cohort_bl` Pseudo-cohort at baseline. We create this object above and have called it `mcdata`.
-- @param `endtime` Number of total years for the pseudo-cohort to be followed. In this study, we set `endtime=20`
-- @param `mod_e` Pooled linear model for (log) radon exposure while at work. This is model is the annual log-radon exposure (defined above). This model is also created above and stored as the object `mod_e`.
-- @param `mod_w` Pooled logistic model for leaving work (at the end of the year) while at work. This models the time-varying confounder of employment. This model is also created above and stored as the object `mod_w`.
-- @param `mod_d` Pooled logistic model for death. This models the time-varying outcome of death. This model is also created above and stored as the object `mod_d`.
-- @param `seed` Seed value we input so that the results are reproducible. 
-
-
-
-
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 gformula_risks <- function(intervention=NULL, pseudo_cohort_bl, 
                            endtime, mod_e, mod_w, mod_d, seed=NULL){
   N <- nrow(pseudo_cohort_bl)
@@ -442,14 +254,9 @@ gformula_risks <- function(intervention=NULL, pseudo_cohort_bl,
   pseudo_cohort
 }
 
+################################################################################################################################
 
 
-```
-
-
-We perform the simulation under the natural course again using the `gformula_risks()` function, and store the results from the function call into the object `nc` (or natural course). 
-
-```{r, class.source = 'fold-show'}
 nc = gformula_risks(intervention=NULL, pseudo_cohort_bl=mcdata, endtime=20, 
                     mod_e=mod_e, mod_w=mod_w, mod_d=mod_d, seed=12325)
 gf_cuminc_nc <- with(nc, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incidence, outtime, mean)))) 
@@ -459,12 +266,7 @@ knitr::kable(gf_cuminc_nc, caption = "Cumulative incidence: natural course regim
 
 
 
-```
-
-
-We perform the same analysis under the remaining three regimes:
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 unex = gformula_risks(intervention=0, 
                       pseudo_cohort_bl=mcdata, 
                       endtime=20, 
@@ -490,12 +292,6 @@ gf_cuminc_exp1 <- with(exp1, tibble(time=seq(0,20, 1), ci=c(0, tapply(cum_incide
 knitr::kable(gf_cuminc_exp1, caption = "Cumulative incidence: radon limit = 0.1 exposure regime")
 
 
-```
-
-
-Instead of using a table, we can visualize these results:
-
-```{r, class.source = 'fold-show'}
 ggplot() +
   geom_line(aes(x=time, y=ci, color="Natural course"), data=gf_cuminc_nc) +
   geom_line(aes(x=time, y=ci, color="Unexposed"), data=gf_cuminc_unex ) +
@@ -509,20 +305,12 @@ ggplot() +
   ggtitle(expression(paste("G-formula estimates of cumulative incidence")))
 
 
-```
 
-
-The observed risk estimates can be calculated using the Kaplain-Meier formula. These will be approximately similar to the natural course under correct model specification and in a large ennough sample size. To compare to observed incidence, we can use the `survfit()` function from the `survival` package:
-
-```{r, class.source = 'fold-show'}
 obscifit <- survfit(Surv(intime, outtime, dead)~1, data=miners)
 obsnc <- tibble(time=obscifit$time, ci=1-obscifit$surv)
 
 
-```
 
-
-```{r}
 ggplot() +
   geom_line(aes(x=time, y=ci, color="Natural course"), data=gf_cuminc_nc) +
   geom_line(aes(x=time, y=ci, color="Unexposed"), data=gf_cuminc_unex ) +
@@ -535,20 +323,7 @@ ggplot() +
   theme_classic() +
   theme(legend.position = c(0.99,0.01),legend.justification = c(1,0))+
   ggtitle(expression(paste("G-formula estimates of cumulative incidence")))
-```
 
-# Bootstrapped variance
-
-In order to estimate confidence intervals, we will need to get the sample variance using bootstrapping. To do so, we first need to create a function that will perform the bootstrapping. Then we will use the `boot()` function from the `boot` package to perform the bootstrapping $R$ times, based on that function.
-
-The function `gformula_effectestimates()` takes the following parameters:
-
-- @param `baseline_data` Baseline data set at `intime=0` (created above)
-- @param `index` If `NULL`, then original data will be used. If not null, then bootstrapped samples fro the baseline will be taken using the vector `index`. The default is `NULL`.
-- @param `fdata` Functional data if `index` is not NULL. The default is the full `miners` data set
-- @param `seed` Seed value we input so that the results are reproducible. 
-
-```{r, class.source = 'fold-show'}
 # now we turn the g-formula algorithm to get risk difference into a function in order to get bootstrap variance
 gformula_effectestimates <- function(data=baseline_data, index=NULL, fdata=miners, endtime=10, seed=NULL){
   # for bootstrap samples, when needed: first take a random sample of the 
@@ -613,36 +388,16 @@ gformula_effectestimates <- function(data=baseline_data, index=NULL, fdata=miner
     lrr_unex_10=log(c(ci_unex/ci_nc)[endtime])
   )
 }
-```
-
-
-
-
-
-
-Prior to performing the bootstrapping, we will use the function to get point estimates for the risk difference at `t=10`:
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 gf_est <- gformula_effectestimates(data=baseline_data, fdata=miners, endtime=10, seed=NULL)
 knitr::kable(gf_est, caption="1 Bootstrapped Resample: Risk Differences")
 
-```
 
-
-
-In order to get confidence intervals, we will use the non-parametric bootstrap. To note: to get valid standard errors, we should use at least 200 bootstrap samples, and at least 1000 for percentile-based confidence intervals. In the interest of computation time, we will only perform 10 bootstrap samples here.
-
-```{r}
 nbootsamples = 10
 boot_samples <- boot(data = baseline_data, fdata=miners, statistic = gformula_effectestimates, R = nbootsamples, endtime=10)
 knitr::kable(boot_samples$t0, caption="10 Bootstrapped Resamples: Risk Differences")
 
-```
-
-
-Finally, we calculate the 95% bootstrapped confidence intervals:
-
-```{r, class.source = 'fold-show'}
+################################################################################################################################
 est = boot_samples$t0 #the risk differences
 lci =  boot_samples$t0 - 1.96*apply(boot_samples$t, 2, sd)
 uci =  boot_samples$t0 + 1.96*apply(boot_samples$t, 2, sd)
@@ -655,10 +410,7 @@ dat1 <- cbind.data.frame(regime = c("Exp3","Exp1","Unex","Exp3","Exp1","Unex"),
 dat1 %>%
   knitr::kable(caption = "Risk Differences/Log Relative Risks and 95% Bootstrapped Confidence Intervals (R=10) Under Different Treatment Regimes at t=10 Using G-Formula")
 
-```
 
-
-```{r}
 #plot risk difference
 ggplot(data=subset(dat1, type=="Risk Difference")) + 
   geom_point(aes(x=regime, y=RD)) +
@@ -672,18 +424,7 @@ ggplot(data=subset(dat1, type=="Risk Difference")) +
 
 
 
-```
 
-
-Under the unexposed regime, the risk difference is -0.14. By reducing all radon exposure for miners to 0, we can expect to reduce 14 deaths per 100 miners as attributable to radon exposure.
-
-Under the regime of limiting the exposure to 0.1, the risk difference is -0.07. By reducing radon exposure for miners to only 0.1 x 1000 pCi/L-year limit ("well below current standard"), we can expect to reduce 7 deaths per 100 miners as attributable to radon exposure under this regime.
-
-Under the regime of limiting the exposure to 0.3, the risk difference is -0.03. By reducing radon exposure for miners to 0.3 x 1000 pCi/L-year limit ("slightly below current standard"), we can expect to only reduce 3 deaths per 100 miners as attributable to radon exposure under this regime.
-
-
-
-```{r}
 #make table
 #exponentiate the log RR to get RRs
 dat1 %>%
@@ -702,23 +443,7 @@ ggplot() +
   geom_hline(yintercept = 1, linetype="dashed")
 
 
-```
 
-Under the unexposed regime, the risk ratio is 0.84. We expect that reducing all radon exposure for miners to 0 will reduce mortality by 16%.
-
-
-Under the regime of limiting the exposure to 0.1, the risk ratio is 0.92. By reducing radon exposure for miners to only 0.1 x 1000 pCi/L-year limit ("well below current standard"), we can expect to reduce radon deaths by 8% as attributable to radon exposure under this regime.
-
-Under the regime of limiting the exposure to 0.3, the risk ratio is 97%. By reducing radon exposure for miners to 0.3 x 1000 pCi/L-year limit ("slightly below current standard"), we can expect to only reduce radon deaths by 3% as attributable to radon exposure under this regime.
-
-
-
-# Exercise
-
-Perform the bootstrap sampling for $R=200$ resamples. Plot your results and interpret them:
-
-
-```{r, eval=TRUE}
 
 boot_samples200 <- boot(data = baseline_data, fdata=miners, statistic = gformula_effectestimates, R = 200, endtime=10)
 
@@ -740,23 +465,7 @@ ggplot(data=dat) +
   ggtitle("G-Formula-Based Risk Differences/Log Relative Risk Predictions Under Different Treatment Regimes") +
   theme(legend.position = "bottom")
 
-```
 
+# NA
 
-
-\newpage
-
-## Appendix - R Code
-
-```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
-```
-
-
-
-```{r}
 knitr::purl(input = "longitudinal_gformula.Rmd", output = "longitudinal_gformula.R",documentation = 0)
-```
-
-
-
-

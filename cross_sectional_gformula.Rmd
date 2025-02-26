@@ -3,13 +3,14 @@ title: "Cross-Sectional G-Formula"
 author: "A. Keil and M.Kamenetsky"
 date: "2025-02"
 output:
+  pdf_document: default
   html_document:
     code_folding: hide
 ---
 
-```{r setup, include=FALSE}
+```{r, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
-answerkey=TRUE
+
 ```
 
 
@@ -51,6 +52,7 @@ By the end of this tutorial, you will be able to:
   - 1) Exchangeability
   - 2) Consistency
   - 3) Positivity
+  - 4) No interference
   
 - The parametric g-formula allows us to answer key public health questions, such as expected outcomes under various regimes. It allows us to make inference about effects of interventions or treatments
 - The g-formula is useful for:
@@ -270,7 +272,7 @@ dat_nc <- coalplant %>%
 
 Suppose that based on prior research, we know that 91% of arsenic, 96% of beryllium, and 45% of cadmium ambient levels come from a local coal-fired power plant. One **joint effect** of interest would be what would happen if we reduced the exposures by the proportion expected by decommissioning the power plant? 
 
-```{r, eval=answerkey, echo=answerkey}
+```{r, eval=TRUE, echo=TRUE}
 #create new data set based on new intervention
 dat_no_coal <- coalplant %>%
   mutate(as = as*(1-0.96),
@@ -285,7 +287,7 @@ dat_no_coal <- coalplant %>%
 
 What would be the joint effect from only setting arsenic levels to 0?
 
-```{r, eval=answerkey, echo=answerkey}
+```{r, eval=TRUE, echo=TRUE}
 dat_no_as <- coalplant %>%
   mutate(as = as*0)
 #predict mean MDI 
@@ -295,7 +297,7 @@ dat_no_as <- coalplant %>%
 
 What would be the joint effect from only setting beryllium levels to 0?
 
-```{r, eval=answerkey, echo=answerkey}
+```{r, eval=TRUE, echo=TRUE}
 dat_no_be <- coalplant %>%
   mutate(be = be*0)
 #predict mean MDI 
@@ -305,14 +307,14 @@ dat_no_be <- coalplant %>%
 
 What would be the joint effect from only setting cadmium levels to 0?
 
-```{r, eval=answerkey, echo=answerkey}
+```{r, eval=TRUE, echo=TRUE}
 dat_no_cd <- coalplant %>%
   mutate(cd = cd*0)
 #predict mean MDI 
 (no_cd <- mean(predict(mdimod, newdata = dat_no_cd)))
 ```
 
-```{r, eval=answerkey, echo=answerkey, results='asis', class.source = 'fold-show'}
+```{r, eval=TRUE, echo=TRUE, results='asis', class.source = 'fold-show'}
 c(naturalcourse = nc, 
   no_coal = no_coal, 
   no_arsenic = no_as, 
@@ -329,7 +331,7 @@ If we wanted to estimate the effect of decommissioning the power plant, we could
 
 $$\Delta \bar{MDI} = E(MDI^{as\times [1-0.96]; be\times[1-0.91]; cd\times[1-0.45]}) - E(MDI^{as;be;cd}) $$
 
-```{r, eval=answerkey, echo=answerkey}
+```{r, eval=TRUE, echo=TRUE}
 no_coal-nc
 
 ```
@@ -415,4 +417,17 @@ print(cbind(estimate=bootsamples$t0, lowerCI=bootsamples$t0-1.96*se, upperCI=boo
 By shutting down the coal plant, we would expect an increase in mean MDI of 2 year olds to increase by 2.6 points, relative to doing nothing (natural course). This joint effect results in a larger difference in expected MDI score than completely eliminating any one of the co-pollutants on its own.
 
 The parametric g-formula for a point exposure involves a standard regression model, but allows for more flexibility in inference. 
+
+\newpage
+
+## Appendix - R Code
+
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```
+
+
+
+```{r}
+knitr::purl(input = "cross_sectional_gformula.Rmd", output = "cross_sectional_gformula.R",documentation = 0)
+```
 

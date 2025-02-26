@@ -488,6 +488,9 @@ reduction scenarios</li>
 <li><ol start="3" style="list-style-type: decimal">
 <li>Positivity</li>
 </ol></li>
+<li><ol start="4" style="list-style-type: decimal">
+<li>No interference</li>
+</ol></li>
 </ul></li>
 <li><p>The parametric g-formula allows us to answer key public health
 questions, such as expected outcomes under various regimes. It allows us
@@ -948,6 +951,193 @@ expected MDI score than completely eliminating any one of the
 co-pollutants on its own.</p>
 <p>The parametric g-formula for a point exposure involves a standard
 regression model, but allows for more flexibility in inference.</p>
+</div>
+<div id="appendix---r-code" class="section level2">
+<h2>Appendix - R Code</h2>
+<pre class="r"><code>knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+answerkey=TRUE
+#Load in libraries
+library(ggplot2) #for plotting
+library(dplyr) #for data cleaning
+library(survival) #for survival analysis
+library(boot) #for bootstrapping
+library(ggcorrplot)
+library(ggdag)
+exdag &lt;- ggdag::dagify(A ~ L,
+                         Y ~ L,
+                         Y ~ A)
+
+#set.seed(2)
+set.seed(18)
+ggdag::ggdag(exdag)+
+  theme_void() +
+  ggtitle(&quot;Example DAG&quot;)
+
+our_dag &lt;- ggdag::dagify(B ~ U,
+                         Y ~ B,
+                         Y ~ A, 
+                         Y ~ C,
+                         A ~ U,
+                         C~ U,
+                         Y ~ L,
+                         A ~ L,
+                         B ~ L,
+                         C~ L,
+                         labels = c(&quot;B&quot; = &quot;Beryllium&quot;,
+                                    &quot;U&quot; = &quot;Coal plant&quot;,
+                                    &quot;Y&quot; = &quot;MDI&quot;,
+                                    &quot;A&quot; = &quot;Arsenic&quot;,
+                                    &quot;C&quot; = &quot;Cadmium&quot;,
+                                    &quot;L&quot; = &quot;Urbanicity&quot;))
+
+
+#set.seed(2)
+set.seed(18)
+p &lt;- ggdag::ggdag(our_dag,
+             use_labels = &quot;label&quot;) +
+  theme_void() +
+  ggtitle(&quot;DAG&quot;)
+p$layers[[3]]$mapping &lt;- 
+  aes(colour = c(&quot;Exposures&quot;, &quot;Confounders&quot;)[as.numeric(name %in%  c(&quot;U&quot;,&quot;L&quot;,&quot;Y&quot;)) + 1])
+set.seed(18)
+p + scale_color_manual(values = c(&quot;black&quot;, &quot;#cc2055&quot;)) +
+  theme(legend.position = &quot;none&quot;)
+
+
+coalplant &lt;- read.csv(&quot;data/coalplant.csv&quot;)
+str(coalplant)
+summary(coalplant[, 2:5])
+table(coalplant$urbanicity)
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=as)) +
+  theme_bw() +
+  ggtitle(&quot;Histogram of Arsenic&quot;) +
+  facet_grid(.~ urbanicity)
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=be)) +
+  theme_bw() +
+  ggtitle(&quot;Histogram of Beryllium&quot;) +
+  facet_grid(.~ urbanicity)
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=cd)) +
+  theme_bw() +
+  ggtitle(&quot;Histogram of Cadmium&quot;) +
+  facet_grid(.~ urbanicity)
+
+
+ggplot(data=coalplant) +
+  geom_histogram(aes(x=mdi)) +
+  theme_bw() +
+  ggtitle(&quot;Histogram of MDI&quot;) +
+  facet_grid(.~ urbanicity)
+
+coalplant %&gt;%
+  filter(urbanicity==1) %&gt;%
+  summary()
+
+coalplant %&gt;%
+  filter(urbanicity==0) %&gt;%
+  summary()
+
+
+exposures &lt;- c(&quot;as&quot;, &quot;be&quot;,&quot;cd&quot;)
+corr &lt;- cor(coalplant[, exposures])
+ggcorrplot(corr)
+
+mdimod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity + as*be + as*cd + be*cd, data=coalplant)
+plot(mdimod)
+summary(mdimod)
+
+
+mean(predict(mdimod))
+#create new data set for prediction
+dat_nc &lt;- coalplant %&gt;%
+    mutate(as = as*(1-0.00), #no reduction in as
+         be = be*(1-0.00), #no reduction in be
+         cd = cd*(1-0.00)) #no reduction in cd
+  
+#predict mean MDI 
+(nc &lt;- mean(predict(mdimod, newdata = dat_nc)))
+  
+#create new data set based on new intervention
+dat_no_coal &lt;- coalplant %&gt;%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+#predict mean MDI 
+(no_coal &lt;- mean(predict(mdimod, newdata = dat_no_coal)))
+  
+  
+dat_no_as &lt;- coalplant %&gt;%
+  mutate(as = as*0)
+#predict mean MDI 
+(no_as &lt;- mean(predict(mdimod, newdata = dat_no_as)))
+dat_no_be &lt;- coalplant %&gt;%
+  mutate(be = be*0)
+#predict mean MDI 
+(no_be &lt;- mean(predict(mdimod, newdata = dat_no_be)))
+dat_no_cd &lt;- coalplant %&gt;%
+  mutate(cd = cd*0)
+#predict mean MDI 
+(no_cd &lt;- mean(predict(mdimod, newdata = dat_no_cd)))
+c(naturalcourse = nc, 
+  no_coal = no_coal, 
+  no_arsenic = no_as, 
+  no_beryllium = no_be, 
+  no_cadmium = no_cd) %&gt;%
+  knitr::kable(col.names = c(&quot;Model&quot;,&quot;Predicted Mean MDI&quot;))
+
+no_coal-nc
+
+bootfunc &lt;- function(data, index){
+  mcsample = data[index,] #resampled data set
+  bootmod = lm(mdi ~ as*urbanicity + be*urbanicity + cd*urbanicity + as*be + as*cd + be*cd, data=mcsample) #model
+  
+  #scenarios
+  ###natural course
+  dat_nc &lt;- mcsample %&gt;%
+    mutate(as = as*(1-0.00), #no reduction in as
+           be = be*(1-0.00), #no reduction in be
+           cd = cd*(1-0.00)) #no reduction in cd
+  nc &lt;- mean(predict(bootmod, newdata = dat_nc))
+  
+  ###no coal-fire power plant
+  dat_no_coal &lt;- mcsample  %&gt;%
+  mutate(as = as*(1-0.96),
+         be = be*(1-0.91),
+         cd = cd*(1-0.45))
+  no_coal &lt;- mean(predict(bootmod, newdata = dat_no_coal))
+  
+  ###no arsenic
+  dat_no_as &lt;- mcsample  %&gt;%
+  mutate(as = as*0)
+  no_as &lt;- mean(predict(bootmod, newdata = dat_no_as))
+  
+  ###no beryllium
+  dat_no_be &lt;- mcsample %&gt;%
+  mutate(be = be*0)
+  no_be &lt;- mean(predict(bootmod, newdata = dat_no_be))
+  
+  ###no cadmium
+  dat_no_cd &lt;- mcsample  %&gt;%
+  mutate(cd = cd*0)
+  no_cd &lt;- mean(predict(bootmod, newdata = dat_no_cd))
+  
+  #combine estiamtes together to export
+  c(nc_mdi=nc, shutdown=no_coal-nc, attrmdi_cd=no_cd-nc, attrmdi_as=no_as-nc, attrmdi_be=no_be-nc)
+  
+}
+set.seed(2)
+bootsamples = boot(data=coalplant, statistic=bootfunc, R=500)
+bootsamples
+
+bootsamples$t[1:20,]
+se = apply(bootsamples$t, 2, sd)
+se
+print(cbind(estimate=bootsamples$t0, lowerCI=bootsamples$t0-1.96*se, upperCI=bootsamples$t0+1.96*se), 3)</code></pre>
 </div>
 </div>
 
